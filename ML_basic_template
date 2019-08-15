@@ -1,0 +1,77 @@
+#modification of code used in lesson 1 and 2 of the fastai machine learning course
+#basic template for a resnet34 fit. uses fasti ai nerural network learner, makes a preliminary fit, 
+#looks at the optimal learning rates and does a optimized fit
+
+#imports images that has been scraped from Google imagesby going to the google image page then getting 
+#the list of URLs by pressing Ctrl+Shft+J (mac) or Cmd+opt+K (windows/linux) and pasting the following:
+
+#  urls = Array.from(document.querySelectorAll('.rg_di .rg_meta')).map(el=>JSON.parse(el.textContent).ou);
+#  window.open('data:text/csv;charset=utf-8,' + escape(urls.join('\n')));
+#I renamed the URL txt file what I want the image class name to be
+####################
+from fastai.vision import *
+
+#Defining a function to look through the txt files in the "FilePath" and extract the name of the files
+#to create class folders. 
+
+def importall(FilePath):
+    from os import walk
+    classes=[]
+    files=[]
+    
+    for root, dirs, filenames in walk(FilePath):
+        for file in filenames:
+            if file.endswith('.csv'):
+                classes=np.append(classes,file.split('.')[0])
+                files=np.append(files,file)
+    return classes, files
+
+#downloading and verifying the images in folder 'cat_age_data'.    
+
+    classes,files=importall('cat_age_data')
+    
+    for i in range(len(classes)):
+    folder=classes[i]
+    file=files[i]
+    path=Path('cat_age_data')
+    dest=path/folder
+    dest.mkdir(parents=True, exist_ok=True)
+    download_images(path/file, dest, max_pics=800)
+
+for c in classes:
+    print(c)
+    verify_images(path/c, delete=True, max_workers=8)
+
+#creating a validation set of 20% of the data and formating the images for optimal learning
+np.random.seed(42)
+data = ImageDataBunch.from_folder(path, train=".", valid_pct=0.2,
+        ds_tfms=get_transforms(), size=224, num_workers=4).normalize(imagenet_stats)    
+
+#display a random sampl of the images
+data.show_batch(rows=3, figsize=(7,8))
+
+%import learner model
+learn = cnn_learner(data, models.resnet34, metrics=error_rate)
+
+#preliminary 4 epoch fit
+learn.fit_one_cycle(4)
+learn.save('stage-1')
+
+#unfreezing the data and determining the optimal learning rate from the plot displayed
+learn.unfreeze()
+learn.lr_find()
+learn.recorder.plot()
+
+#here insert the min and max learning rate. Min should be from the steepest downward slope. Max an 
+#order of magnitude above, but before to high of an increase in error
+learn.fit_one_cycle(2, max_lr=slice(3e-5,3e-4))
+learn.save('stage-2')
+
+#determining outliers by plotting a matrix of which classes were identified correctly and incorrectly
+interp = ClassificationInterpretation.from_learner(learn)
+interp.plot_confusion_matrix()
+
+#test the data
+img=open_image(‘Machine_Learning/test_animals/kitten_1.jpg’)
+pred_class,pred_idx,outputs = learn.predict(img)
+print(pred_class,outputs)
